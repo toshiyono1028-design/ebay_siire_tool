@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import io
 
-# 1. ページの設定
+# 1. ページの設定（ワイドモード）
 st.set_page_config(page_title="eBay相場レンジ検索ツール", layout="wide")
 
 # 2. タイトルの表示
@@ -22,6 +22,7 @@ def load_data():
             st.error("データが見つかりません。スプレッドシートから同期を実行してください。")
             return None
     
+    # データのクリーニング
     for col in ["メーカー", "規格", "mm", "F値", "コンディション"]:
         if col in df.columns:
             df[col] = df[col].fillna("").astype(str).str.strip()
@@ -65,7 +66,7 @@ if df is not None:
             
     st.write("---")
     
-    # 5. 条件がすべて揃ったら本来の相場表を作成
+    # 5. 条件がすべて揃ったら相場表と詳細データを展開
     if (selected_manufacturer != "選択してください" and 
         selected_standard != "選択してください" and 
         selected_mm != "選択してください" and 
@@ -81,38 +82,41 @@ if df is not None:
         if not final_filtered_df.empty:
             st.subheader("📊 コンディション別 相場価格レンジ")
             
-            # コンディションの表記統一
-            def clean_condition(c):
-                c = str(c).upper().strip()
-                if "FOR PARTS" in c or "AS IS" in c or "JUNK" in c:
-                    return "Parts/Junk"
-                if "BRAND NEW" in c or "UNUSED" in c:
-                    return "New/Unused"
+            # 【完全適用】大久保様指定のコンディション定義ロジック
+            def get_group_key(cond):
+                if pd.isna(cond):
+                    return ""
+                c = str(cond).upper().strip()
+                if "ALMOST UNUSED" in c or "UNUSED" in c or "BRAND NEW" in c:
+                    return "① ALMOST UNUSED"
                 if "TOP MINT" in c:
-                    return "Top Mint"
-                if "MINT" in c and "NEAR" not in c:
-                    return "Mint"
-                if "N.MINT" in c or "NEAR MINT" in c or "OPTICAL MINT" in c or "OPT MINT" in c:
-                    return "Near Mint"
+                    return "② TOP MINT"
+                if c == "MINT":
+                    return "③ MINT"
+                if "NEAR MINT" in c or "N.MINT" in c or "OPTICAL MINT" in c or "OPT MINT" in c:
+                    return "④ NEAR MINT"
                 if "EXCELLENT" in c or "EXC" in c:
-                    return "Excellent"
-                if "VERY GOOD" in c or "VG" in c:
-                    return "Very Good"
-                return "Other"
+                    return "⑤ EXCELLENT"
+                if c != "":
+                    return "⑥ OTHER"
+                return ""
                 
-            final_filtered_df["統一コンディション"] = final_filtered_df["コンディション"].apply(clean_condition)
+            final_filtered_df["統一コンディション"] = final_filtered_df["コンディション"].apply(get_group_key)
             
-            summary_data = []
-            conditions_order = ["New/Unused", "Top Mint", "Mint", "Near Mint", "Excellent", "Very Good", "Parts/Junk", "Other"]
-            
-            # 列名の判定（スプレッドシートの表記に対応）
+            # 列名マッピング（スプレッドシートの「商品金額」ヘッダーに対応）
             price_col = "商品金額" if "商品金額" in final_filtered_df.columns else "価格"
             target_col = "目標仕入額" if "目標仕入額" in final_filtered_df.columns else "目標仕入価格"
             
+            # ①〜⑥の順番通りにソートして集計するための定義
+            conditions_order = [
+                "① ALMOST UNUSED", "② TOP MINT", "③ MINT", 
+                "④ NEAR MINT", "⑤ EXCELLENT", "⑥ OTHER"
+            ]
+            
+            summary_data = []
             for cond in conditions_order:
                 cond_df = final_filtered_df[final_filtered_df["統一コンディション"] == cond]
                 if not cond_df.empty:
-                    # 各数値をクリーニングして取得
                     prices = cond_df[price_col].astype(str).str.replace("$", "").str.replace(",", "").astype(float)
                     targets = cond_df[target_col].astype(str).str.replace("¥", "").str.replace(",", "").astype(float)
                     
@@ -122,7 +126,6 @@ if df is not None:
                     max_target = targets.max()
                     count = len(prices)
                     
-                    # 大久保様が以前使われていた通りの並び順と項目名で追加
                     summary_data.append({
                         "コンディション": cond,
                         "目標仕入額(最低)": f"¥{int(min_target):,}" if not pd.isna(min_target) else "-",
@@ -134,11 +137,25 @@ if df is not None:
                     
             if summary_data:
                 summary_df = pd.DataFrame(summary_data)
-                # コンディションを左側の固定見出し（インデックス）にして表示
                 st.table(summary_df.set_index("コンディション"))
             else:
                 st.info("該当するコンディションの価格データがありません。")
+            
+            # --------------------------------------------------
+            # 【完全復元】下部に詳細データ一覧（スプレッドシートの中身）を表示
+            # --------------------------------------------------
+            st.write("---")
+            st.subheader("📋 該当商品の詳細データ一覧")
+            st.write("仕入判断の参考として、該当する生データを全列表示しています。")
+            
+            display_df = final_filtered_df.copy()
+            if "統一コンディション" in display_df.columns:
+                display_df = display_df.drop(columns=["統一コンディション"])
+                
+            display_df.index = range(1, len(display_df) + 1)
+            st.dataframe(display_df, use_container_width=True)
+            
         else:
             st.warning("選択された条件に一致するデータがありませんでした。")
     else:
-        st.info("上のドロップダウンを順番に選択していくと、ここに自動で相場表が作成されます。")
+        st.info("上のドロップダウンを順番に選択していくと、ここに自動で相場表と詳細データが表示されます。")
