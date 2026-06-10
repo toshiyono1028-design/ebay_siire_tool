@@ -82,7 +82,7 @@ if df is not None:
         if not final_filtered_df.empty:
             st.subheader("📊 コンディション別 相場価格レンジ")
             
-            # 【確定】大久保様指定のコンディション定義ロジック
+            # 【大久保様指定】コンディション定義ロジック
             def get_group_key(cond):
                 if pd.isna(cond):
                     return ""
@@ -142,23 +142,29 @@ if df is not None:
                 st.info("該当するコンディションの価格データがありません。")
             
             # --------------------------------------------------
-            # 【スリム化】下部に指定の3列（コンディション、合計(USD)、目標仕入額）のみを表示
+            # 【ご指定の修正】1件ずつの商品を「4列のみ」で個別表示
             # --------------------------------------------------
             st.write("---")
             st.subheader("📋 該当商品の詳細データ一覧")
             
-            # スプレッドシート側の「合計(USD)」という列名を探す
+            # 正確な列名をスプレッドシートから動的に判別
+            name_col = "商品名" if "商品名" in final_filtered_df.columns else ("タイトル" if "タイトル" in final_filtered_df.columns else None)
             total_usd_col = "合計(USD)" if "合計(USD)" in final_filtered_df.columns else ("合計" if "合計" in final_filtered_df.columns else None)
             
-            # 表示する3列を厳選して組み立て
-            selected_columns = ["コンディション"]
+            # 表示したい順に列を厳選してリストを構築
+            selected_columns = []
+            if name_col:
+                selected_columns.append(name_col)
+            selected_columns.append("コンディション") # 生のコンディションを表示
             if total_usd_col:
                 selected_columns.append(total_usd_col)
             if target_col in final_filtered_df.columns:
                 selected_columns.append(target_col)
                 
-            # 抽出して表示
+            # 集約（groupby）せず、1件ずつの個別レコード（生データ）を抽出して表示
             display_df = final_filtered_df[selected_columns].copy()
+            
+            # 左端のインデックスを1番からの連番に綺麗にリセット
             display_df.index = range(1, len(display_df) + 1)
             st.dataframe(display_df, use_container_width=True)
             
