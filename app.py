@@ -15,7 +15,6 @@ def load_data():
     # SecretsからGASが送信したCSV文字列を取得
     if "csv_data" in st.secrets:
         csv_data = st.secrets["csv_data"]
-        # 文字列をデータフレームに変換
         df = pd.read_csv(io.StringIO(csv_data))
     else:
         # 万が一Secretsが空の場合のセーフティ（既存のCSVを予備で読み込む）
@@ -81,7 +80,7 @@ if df is not None:
             (df["規格"] == selected_standard) & 
             (df["mm"] == selected_mm) & 
             (df["F値"] == selected_f)
-        ]
+        ].copy()
         
         if not final_filtered_df.empty:
             st.subheader("📊 コンディション別 相場価格レンジ")
@@ -111,11 +110,14 @@ if df is not None:
             summary_data = []
             conditions_order = ["New/Unused", "Top Mint", "Mint", "Near Mint", "Excellent", "Very Good", "Parts/Junk", "Other"]
             
+            # スプレッドシートのヘッダー名「商品金額」に合わせて計算（なければ予備で「価格」）
+            price_col = "商品金額" if "商品金額" in final_filtered_df.columns else "価格"
+            
             for cond in conditions_order:
                 cond_df = final_filtered_df[final_filtered_df["統一コンディション"] == cond]
                 if not cond_df.empty:
-                    # 「価格」列からドルマークやカンマを除去して数値化
-                    prices = cond_df["価格"].astype(str).str.replace("$", "").str.replace(",", "").astype(float)
+                    # ドルマークやカンマを除去して数値化
+                    prices = cond_df[price_col].astype(str).str.replace("$", "").str.replace(",", "").astype(float)
                     min_price = prices.min()
                     max_price = prices.max()
                     count = len(prices)
@@ -130,7 +132,6 @@ if df is not None:
                     
             if summary_data:
                 summary_df = pd.DataFrame(summary_data)
-                # テーブルとして画面に表示
                 st.table(summary_df.set_index("コンディション"))
             else:
                 st.info("該当するコンディションの価格データがありません。")
