@@ -82,7 +82,7 @@ if df is not None:
         if not final_filtered_df.empty:
             st.subheader("📊 コンディション別 相場価格レンジ")
             
-            # 【大久保様指定】コンディション定義ロジック
+            # 【確定】大久保様指定のコンディション定義ロジック
             def get_group_key(cond):
                 if pd.isna(cond):
                     return ""
@@ -90,4 +90,79 @@ if df is not None:
                 if "ALMOST UNUSED" in c or "UNUSED" in c or "BRAND NEW" in c:
                     return "① ALMOST UNUSED"
                 if "TOP MINT" in c:
-                    return "② TOP
+                    return "② TOP MINT"
+                if c == "MINT":
+                    return "③ MINT"
+                if "NEAR MINT" in c or "N.MINT" in c or "OPTICAL MINT" in c or "OPT MINT" in c:
+                    return "④ NEAR MINT"
+                if "EXCELLENT" in c or "EXC" in c:
+                    return "⑤ EXCELLENT"
+                if c != "":
+                    return "⑥ OTHER"
+                return ""
+                
+            final_filtered_df["統一コンディション"] = final_filtered_df["コンディション"].apply(get_group_key)
+            
+            # 列名マッピング
+            price_col = "商品金額" if "商品金額" in final_filtered_df.columns else "価格"
+            target_col = "目標仕入額" if "目標仕入額" in final_filtered_df.columns else "目標仕入価格"
+            
+            # ①〜⑥の順番通りにソートして集計するための定義
+            conditions_order = [
+                "① ALMOST UNUSED", "② TOP MINT", "③ MINT", 
+                "④ NEAR MINT", "⑤ EXCELLENT", "⑥ OTHER"
+            ]
+            
+            summary_data = []
+            for cond in conditions_order:
+                cond_df = final_filtered_df[final_filtered_df["統一コンディション"] == cond]
+                if not cond_df.empty:
+                    prices = cond_df[price_col].astype(str).str.replace("$", "").str.replace(",", "").astype(float)
+                    targets = cond_df[target_col].astype(str).str.replace("¥", "").str.replace(",", "").astype(float)
+                    
+                    min_price = prices.min()
+                    max_price = prices.max()
+                    min_target = targets.min()
+                    max_target = targets.max()
+                    count = len(prices)
+                    
+                    summary_data.append({
+                        "コンディション": cond,
+                        "目標仕入額(最低)": f"¥{int(min_target):,}" if not pd.isna(min_target) else "-",
+                        "目標仕入額(最高)": f"¥{int(max_target):,}" if not pd.isna(max_target) else "-",
+                        "最安値 (USD)": f"${min_price:,.2f}",
+                        "最高値 (USD)": f"${max_price:,.2f}",
+                        "データ件数": f"{count} 件"
+                    })
+                    
+            if summary_data:
+                summary_df = pd.DataFrame(summary_data)
+                st.table(summary_df.set_index("コンディション"))
+            else:
+                st.info("該当するコンディションの価格データがありません。")
+            
+            # --------------------------------------------------
+            # 【スリム化】下部に指定の3列（コンディション、合計(USD)、目標仕入額）のみを表示
+            # --------------------------------------------------
+            st.write("---")
+            st.subheader("📋 該当商品の詳細データ一覧")
+            
+            # スプレッドシート側の「合計(USD)」という列名を探す
+            total_usd_col = "合計(USD)" if "合計(USD)" in final_filtered_df.columns else ("合計" if "合計" in final_filtered_df.columns else None)
+            
+            # 表示する3列を厳選して組み立て
+            selected_columns = ["コンディション"]
+            if total_usd_col:
+                selected_columns.append(total_usd_col)
+            if target_col in final_filtered_df.columns:
+                selected_columns.append(target_col)
+                
+            # 抽出して表示
+            display_df = final_filtered_df[selected_columns].copy()
+            display_df.index = range(1, len(display_df) + 1)
+            st.dataframe(display_df, use_container_width=True)
+            
+        else:
+            st.warning("選択された条件に一致するデータがありませんでした。")
+    else:
+        st.info("上のドロップダウンを順番に選択していくと、ここに自動で相場表と詳細データが表示されます。")
